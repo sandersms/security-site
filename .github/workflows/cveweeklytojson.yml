@@ -9,6 +9,8 @@ on:
 jobs:
   parse-cisa-summary:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Grant github-actions[bot] permission to push commits
 
     steps:
       - name: Checkout Repository
