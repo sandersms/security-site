@@ -12,10 +12,10 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6.3.0
         with:
           python-version: '3.11'
 
@@ -29,39 +29,69 @@ jobs:
           python - << 'EOF'
           import re
           import json
+          import datetime
           import requests
           from bs4 import BeautifulSoup
 
-          # 1. Locate latest bulletin URL
-          INDEX_URL = "https://www.cisa.gov/news-events/bulletins"
-          print(f"Fetching index page: {INDEX_URL}")
-          index_resp = requests.get(INDEX_URL, headers={"User-Agent": "Mozilla/5.0"})
-          
-          # Match bulletin path format (sbYY-DDD)
-          match = re.search(r'/news-events/bulletins/sb\d{2}-\d{3}', index_resp.text)
-          if not match:
-              raise ValueError("Could not find latest bulletin link on index page.")
-          
-          bulletin_url = f"https://www.cisa.gov{match.group(0)}"
-          print(f"Latest Bulletin Found: {bulletin_url}")
-
-          # 2. Fetch bulletin page content
-          page_resp = requests.get(bulletin_url, headers={"User-Agent": "Mozilla/5.0"})
-          soup = BeautifulSoup(page_resp.text, 'html.parser')
-
-          page_title = soup.find('h1').text.strip() if soup.find('h1') else "CISA Weekly Vulnerability Summary"
-          parsed_data = {
-              "title": page_title,
-              "url": bulletin_url,
-              "tables": {}
+          # Browser headers to bypass basic Cloudflare/Akamai blocks
+          HEADERS = {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+              "Accept-Language": "en-US,en;q=0.5"
           }
 
+          INDEX_URL = "https://www.cisa.gov/news-events/bulletins"
+          bulletin_url = None
+
+          print(f"Fetching index page: {INDEX_URL}")
+          try:
+              index_resp = requests.get(INDEX_URL, headers=HEADERS, timeout=15)
+              index_resp.raise_for_status()
+
+              # Pattern matches sbYY-DDD (e.g., sb26-050)
+              match = re.search(r'/(?:news-events/bulletins/)?(sb\d{2}-\d{3})', index_resp.text, re.IGNORECASE)
+              if match:
+                  bulletin_id = match.group(1).lower()
+                  bulletin_url = f"https://www.cisa.gov/news-events/bulletins/{bulletin_id}"
+                  print(f"Extracted Bulletin URL from HTML: {bulletin_url}")
+          except Exception as e:
+              print(f"Scraping failed: {e}")
+
+          # Fallback: Compute most recent Monday bulletin URL (CISA uses Julian day format sbYY-DDD)
+          if not bulletin_url:
+              print("Falling back to URL calculation for most recent Monday...")
+              today = datetime.date.today()
+              # Find most recent Monday
+              last_monday = today - datetime.timedelta(days=today.weekday())
+              year_short = last_monday.strftime("%y")
+              day_of_year = last_monday.strftime("%j")
+              
+              computed_id = f"sb{year_short}-{day_of_year}"
+              bulletin_url = f"https://www.cisa.gov/news-events/bulletins/{computed_id}"
+              print(f"Computed Fallback URL: {bulletin_url}")
+
+          # Fetch actual bulletin page
+          page_resp = requests.get(bulletin_url, headers=HEADERS, timeout=15)
+          
+          # If calculated URL isn't live yet, fallback to previous week's Monday
+          if page_resp.status_code == 404:
+              print("Calculated URL returned 404. Attempting prior week's bulletin...")
+              prev_monday = last_monday - datetime.timedelta(days=7)
+              computed_id = f"sb{prev_monday.strftime('%y')}-{prev_monday.strftime('%j')}"
+              bulletin_url = f"https://www.cisa.gov/news-events/bulletins/{computed_id}"
+              page_resp = requests.get(bulletin_url, headers=HEADERS, timeout=15)
+
+          page_resp.raise_for_status()
+          print(f"Successfully connected to bulletin: {bulletin_url}")
+
+          soup = BeautifulSoup(page_resp.text, 'html.parser')
+          page_title = soup.find('h1').text.strip() if soup.find('h1') else "CISA Weekly Vulnerability Summary"
+          
+          parsed_data = {"title": page_title, "url": bulletin_url, "tables": {}}
           markdown_content = f"# {page_title}\n\n**Source:** [{bulletin_url}]({bulletin_url})\n\n"
 
-          # 3. Process tables (High, Medium, Low severities)
           tables = soup.find_all('table')
           for i, table in enumerate(tables):
-              # Attempt to find table header or caption for severity level
               prev_h = table.find_previous(['h2', 'h3', 'h4'])
               category = prev_h.text.strip() if prev_h else f"Severity Section {i+1}"
               
@@ -73,13 +103,11 @@ jobs:
               for tr in table.find_all('tr'):
                   cells = [td.text.strip() for td in tr.find_all('td')]
                   if cells:
-                      # Map headers to cell values safely
                       row_dict = {headers[j]: cells[j] for j in range(min(len(headers), len(cells)))}
                       rows.append(row_dict)
 
               parsed_data["tables"][category] = rows
 
-              # Format to Markdown
               markdown_content += f"## {category}\n\n"
               if rows:
                   markdown_content += f"| {' | '.join(headers)} |\n"
@@ -88,13 +116,8 @@ jobs:
                       row_vals = [row.get(h, "").replace("\n", " ") for h in headers]
                       markdown_content += f"| {' | '.join(row_vals)} |\n"
                   markdown_content += "\n"
-              else:
-                  markdown_content += "*No vulnerabilities listed in this section.*\n\n"
 
-          # 4. Save structured outputs
-          import datetime
           date_str = datetime.datetime.now().strftime("%Y-%m-%d")
-
           import os
           os.makedirs("cisa_reports", exist_ok=True)
 
@@ -104,7 +127,7 @@ jobs:
           with open(f"cisa_reports/cisa_summary_{date_str}.md", "w", encoding="utf-8") as f:
               f.write(markdown_content)
 
-          print("Successfully parsed and written to JSON and Markdown files.")
+          print("Successfully parsed and written to files.")
           EOF
 
       - name: Upload Parsed Reports as Artifacts
