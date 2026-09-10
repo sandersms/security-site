@@ -1,0 +1,6 @@
+---
+name: Markdownlint-cli2 configuration parameters
+
+config:
+    MD013:
+        line_length: 120

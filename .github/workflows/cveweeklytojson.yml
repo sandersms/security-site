@@ -1,16 +1,17 @@
+---
 name: Fetch and Parse CISA Weekly Vulnerabilities
 
-on:
+"on":
   schedule:
     # Runs every Monday at 14:00 UTC (10:00 AM EST)
     - cron: '0 14 * * 1'
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
 
 jobs:
   parse-cisa-summary:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Grant github-actions[bot] permission to push commits
+      contents: write  # Grant github-actions[bot] permission to push commits
 
     steps:
       - name: Checkout Repository
@@ -67,14 +68,14 @@ jobs:
               last_monday = today - datetime.timedelta(days=today.weekday())
               year_short = last_monday.strftime("%y")
               day_of_year = last_monday.strftime("%j")
-              
+
               computed_id = f"sb{year_short}-{day_of_year}"
               bulletin_url = f"https://www.cisa.gov/news-events/bulletins/{computed_id}"
               print(f"Computed Fallback URL: {bulletin_url}")
 
           # Fetch actual bulletin page
           page_resp = requests.get(bulletin_url, headers=HEADERS, timeout=15)
-          
+
           # If calculated URL isn't live yet, fallback to previous week's Monday
           if page_resp.status_code == 404:
               print("Calculated URL returned 404. Attempting prior week's bulletin...")
@@ -88,7 +89,7 @@ jobs:
 
           soup = BeautifulSoup(page_resp.text, 'html.parser')
           page_title = soup.find('h1').text.strip() if soup.find('h1') else "CISA Weekly Vulnerability Summary"
-          
+
           parsed_data = {"title": page_title, "url": bulletin_url, "tables": {}}
           markdown_content = f"# {page_title}\n\n**Source:** [{bulletin_url}]({bulletin_url})\n\n"
 
@@ -96,7 +97,7 @@ jobs:
           for i, table in enumerate(tables):
               prev_h = table.find_previous(['h2', 'h3', 'h4'])
               category = prev_h.text.strip() if prev_h else f"Severity Section {i+1}"
-              
+
               headers = [th.text.strip() for th in table.find_all('th')]
               if not headers:
                   headers = ["Vendor/Product", "Description", "Published", "CVSS Score", "Source Info"]

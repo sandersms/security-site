@@ -1,0 +1,58 @@
+---
+name: Linters
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  markdownlint:
+    name: Run markdownlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Lint Markdown Files
+        uses: DavidAnson/markdownlint-cli2-action@v24
+        with:
+          # By default, it scans all markdown files.
+          # Customize globs if you only want specific directories.
+          globs: '**/*.md'
+
+  yaml-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Lint YAML files
+        run: yamllint .
+
+  python-lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+          pip install beautifulsoup4
+          pip install pylint
+
+      - name: Analysing the code with pylint
+        run: |
+          pylint --disable=duplicate-code $(git ls-files '*.py')
