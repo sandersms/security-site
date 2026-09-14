@@ -55,4 +55,11 @@ jobs:
 
       - name: Analysing the code with pylint
         run: |
-          pylint --disable=duplicate-code $(git ls-files '*.py')
+          # Find any python files in the repository
+          PY_FILES=$(git ls-files '*.py')
+
+          if [ -n "$PY_FILES" ]; then
+            pylint --disable=duplicate-code $PY_FILES
+          else
+            echo "No files present, skipping"
+          fi

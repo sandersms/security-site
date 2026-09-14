@@ -1,5 +1,8 @@
 ---
-name: Markdownlint-cli2 configuration parameters
+# name: Markdownlint-cli2 configuration parameters
+
+ignores:
+    - "cisa_reports/"
 
 config:
     MD013:
