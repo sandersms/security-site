@@ -3,8 +3,8 @@ name: Fetch and Parse CISA Weekly Vulnerabilities
 
 "on":
   schedule:
-    # Runs every Monday at 14:00 UTC (10:00 AM EST)
-    - cron: '0 14 * * 1'
+    # Runs every Monday at 14:00 UTC (10:00 AM EST) - uncomment line below to enable
+    # - cron: '0 14 * * 1'
   workflow_dispatch:  # Allows manual trigger from GitHub UI
 
 jobs:
